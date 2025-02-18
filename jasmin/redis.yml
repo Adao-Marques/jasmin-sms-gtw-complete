@@ -1,0 +1,125 @@
+# Persistent Volume for Redis
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv
+  labels:
+    pv-name: redis-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""  # Evita vinculação automática a uma StorageClass
+  hostPath:
+    path: /k8s-volumes/redis/redis-pv
+    type: DirectoryOrCreate
+
+---
+
+# Persistent Volume Claim for Redis
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  volumeName: redis-pv  # Vincula explicitamente ao PV
+  storageClassName: ""
+
+---
+
+# ConfigMap for Redis configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+data:
+  redis.conf: |
+    appendonly yes
+    save 900 1
+    save 300 10
+    save 60 10000
+    loglevel notice
+    dir /data
+
+---
+
+# Service for Redis
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: redis
+  clusterIP: None  # Necessário para StatefulSet
+
+---
+
+# StatefulSet for Redis
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:6-alpine
+        command: ["redis-server", "/etc/redis/redis.conf"]
+        ports:
+        - containerPort: 6379
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: redis-config
+          mountPath: /etc/redis/redis.conf
+          subPath: redis.conf  # Usa subPath para montar o ConfigMap como arquivo
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-pvc  # Usa o PVC configurado
+      - name: redis-config
+        configMap:
+          name: redis-config
+
+---
+
+# Horizontal Pod Autoscaler for Redis
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: redis-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: redis
+  minReplicas: 1  # Número mínimo de réplicas
+  maxReplicas: 3  # Número máximo de réplicas
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50  # Ajusta o número de réplicas quando a utilização da CPU for maior que 50%

@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+spec:
+  serviceName: "rabbitmq"
+  replicas: 1  # Começando com 1 réplica, o HPA irá ajustar conforme necessário
+  selector:
+    matchLabels:
+      name: rabbitmq
+  template:
+    metadata:
+      labels:
+        name: rabbitmq
+    spec:
+      containers:
+      - name: rabbitmq
+        image: rabbitmq:management  # Usando imagem com UI de gerenciamento
+        volumeMounts:
+          - name: rabbitmq-data
+            mountPath: /var/lib/rabbitmq  # Persistência de dados
+          - name: etcrabbit
+            mountPath: /etc/rabbitmq/conf.d  # Configuração personalizada
+      volumes:
+        - name: rabbitmq-data
+          hostPath:
+            path: /k8s-volumes/rabbitmq  # Diretório local no nó
+            type: DirectoryOrCreate  # Cria o diretório se não existir
+        - name: etcrabbit
+          configMap:
+            name: rabbit-conf
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbit-conf
+data:
+  10-main.conf: |
+    loopback_users.guest = false
+    prometheus.return_per_object_metrics = true
+    log.console = true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  clusterIP: None  # Headless Service para acesso direto aos pods
+  ports:
+    - port: 5672
+      name: amqp
+    - port: 15672
+      name: management
+  selector:
+    name: rabbitmq
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rabbitmq-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: rabbitmq
+  minReplicas: 1  # Número mínimo de réplicas
+  maxReplicas: 3  # Número máximo de réplicas
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50  # Ajusta o número de réplicas quando a utilização da CPU for maior que 50%

@@ -1,0 +1,213 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jasmin-data-pv
+  labels:
+    pv-name: jasmin-data-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /k8s-volumes/jasmin/jasmin-data-pv
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jasmin-logs-pv
+  labels:
+    pv-name: jasmin-logs-pv
+spec:
+  capacity:
+    storage: 4Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /k8s-volumes/jasmin/jasmin-logs-pv
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jasmin-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 512Mi
+  selector:
+    matchLabels:
+      pv-name: jasmin-data-pv
+  storageClassName: manual
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jasmin-logs-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+  selector:
+    matchLabels:
+      pv-name: jasmin-logs-pv
+  storageClassName: manual
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jasmin
+  labels:
+    app: jasmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jasmin
+  podManagementPolicy: "Parallel"
+  template:
+    metadata:
+      labels:
+        app: jasmin
+    spec:
+      containers:
+        - name: jasmin
+          image: jookies/jasmin:latest
+          ports:
+            - containerPort: 2775
+              name: smpp-port
+            - containerPort: 1401
+              name: http-port
+            - containerPort: 8990
+              name: cli-port
+          command: ["jasmind.py", "--enable-interceptor-client", "-u", "jcliadmin", "-p", "jclipwd"]
+          lifecycle:
+            postStart:
+              exec:
+                command: [ "sh", "-c", "cp /tmp/config/* /etc/jasmin/" ]
+          volumeMounts:
+            - name: jasmin-config
+              mountPath: /tmp/config
+            - name: jasmin-data
+              mountPath: /etc/jasmin/store
+            - name: jasmin-logs
+              mountPath: /var/log/jasmin
+        - name: interceptord-sidecar
+          image: jookies/jasmin:latest
+          command: ["interceptord.py"]
+          lifecycle:
+            postStart:
+              exec:
+                command: [ "sh", "-c", "cp /tmp/config/* /etc/jasmin/" ]
+          volumeMounts:
+            - name: interceptor-config
+              mountPath: /tmp/config
+        - name: dlrlookupd-sidecar
+          image: jookies/jasmin:latest
+          command: ["dlrlookupd.py"]
+          lifecycle:
+            postStart:
+              exec:
+                command: [ "sh", "-c", "cp /tmp/config/* /etc/jasmin/" ]
+          volumeMounts:
+            - name: dlrlookupd-config
+              mountPath: /tmp/config
+        - name: dlrd-sidecar
+          image: jookies/jasmin:latest
+          command: ["dlrd.py"]
+          lifecycle:
+            postStart:
+              exec:
+                command: [ "sh", "-c", "cp /tmp/config/* /etc/jasmin/" ]
+          volumeMounts:
+            - name: dlr-config
+              mountPath: /tmp/config
+      volumes:
+        - name: jasmin-config
+          configMap:
+            name: etc-jasmin
+        - name: jasmin-data
+          persistentVolumeClaim:
+            claimName: jasmin-data-pvc
+        - name: interceptor-config
+          configMap:
+            name: etc-interceptor
+        - name: dlrlookupd-config
+          configMap:
+            name: etc-dlrlookupd
+        - name: dlr-config
+          configMap:
+            name: etc-dlr
+        - name: jasmin-logs
+          persistentVolumeClaim:
+            claimName: jasmin-logs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jasmin-cli
+spec:
+  type: NodePort  # Alterado para NodePort
+  selector:
+    app: jasmin
+  ports:
+  - protocol: TCP
+    port: 8990
+    targetPort: cli-port
+    nodePort: 30090  # Exemplo de NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jasmin-smpp-api
+spec:
+  type: NodePort  # Alterado para NodePort
+  selector:
+    app: jasmin
+  ports:
+  - protocol: TCP
+    port: 2775
+    targetPort: smpp-port
+    nodePort: 30075  # Exemplo de NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jasmin-http-api
+spec:
+  type: NodePort  # Alterado para NodePort
+  selector:
+    app: jasmin
+  ports:
+  - protocol: TCP
+    port: 1401
+    targetPort: http-port
+    nodePort: 30141  # Exemplo de NodePort
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: jasmin-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: jasmin
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50  # Ajuste conforme necessário
