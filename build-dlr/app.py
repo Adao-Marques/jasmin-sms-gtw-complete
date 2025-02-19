@@ -2,30 +2,30 @@ from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
-# Endpoint principal para Delivery Reports (DLR)
+# Main endpoint for Delivery Reports (DLR)
 @app.route('/dlr', methods=['POST'])
 def dlr():
-    data = request.json  # Assume que os dados são enviados como JSON
+    data = request.json  # Assumes data is sent as JSON
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    # Processa o DLR (aqui você pode adicionar sua lógica de negócios)
+    # Process the DLR (add your business logic here)
     print(f"Received DLR: {data}")
 
-    # Resposta de sucesso
+    # Success response
     return jsonify({"status": "DLR received", "data": data}), 200
 
-# Endpoint de health check para livenessProbe
+# Health check endpoint for livenessProbe
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "healthy"}), 200
 
-# Endpoint de readiness check para readinessProbe
+# Readiness check endpoint for readinessProbe
 @app.route('/ready', methods=['GET'])
 def ready():
     return jsonify({"status": "ready"}), 200
 
-# Rota padrão para verificar se o app está rodando
+# Default route to check if the app is running
 @app.route('/', methods=['GET'])
 def index():
     return jsonify({"message": "Jasmin DLR Flask App is running!"}), 200
