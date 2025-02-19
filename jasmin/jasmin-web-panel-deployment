@@ -48,7 +48,7 @@ spec:
               name: cluster1-pguser-cluster1
               key: password
         - name: PRODB_URL
-          value: "postgresql://$(PGUSER):$(PGPASSWORD)@minimal-cluster-haproxy:5432/jasmin_db"
+          value: "postgresql://$(PGUSER):$(PGPASSWORD)@cluster1-ha:5432/jasmin_db"
         ports:
         - containerPort: 8000
         lifecycle:
