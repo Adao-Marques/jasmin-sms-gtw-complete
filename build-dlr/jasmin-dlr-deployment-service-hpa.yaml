@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: jasmin-dlr-service
+  labels:
+    app: jasmin-dlr
+spec:
+  type: NodePort  # Allows external access (change if using an Ingress controller)
+  selector:
+    app: jasmin-dlr
+  ports:
+    - protocol: TCP
+      port: 80          # Exposed service port
+      targetPort: 5000  # Flask container port
+      nodePort: 30080   # Expose on a specific NodePort (optional)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jasmin-dlr-deployment
+  labels:
+    app: jasmin-dlr
+spec:
+  replicas: 1  # Initial replica count, HPA will manage scaling
+  selector:
+    matchLabels:
+      app: jasmin-dlr
+  template:
+    metadata:
+      labels:
+        app: jasmin-dlr
+    spec:
+      containers:
+        - name: jasmin-dlr-container
+          image: jasmin-dlr-image:latest  # Ensure this image is pushed to a registry
+          ports:
+            - containerPort: 5000  # Flask application port
+          env:
+            - name: FLASK_ENV
+              value: "production"  # Set Flask environment to production
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "250m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: log-volume
+              mountPath: /app/logs  # Mount log volume
+          livenessProbe:
+            httpGet:
+              path: /health  # Ensure Flask exposes a /health endpoint
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready  # Ensure Flask exposes a /ready endpoint
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: log-volume
+          emptyDir: {}  # Temporary log storage (use Persistent Volume if needed)
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: jasmin-dlr-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: jasmin-dlr-deployment
+  minReplicas: 1
+  maxReplicas: 5  # Maximum number of replicas
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50  # Scale when CPU usage exceeds 50%
