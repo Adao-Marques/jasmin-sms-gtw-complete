@@ -21,7 +21,7 @@ metadata:
   labels:
     app: jasmin-web-panel
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: jasmin-web-panel
