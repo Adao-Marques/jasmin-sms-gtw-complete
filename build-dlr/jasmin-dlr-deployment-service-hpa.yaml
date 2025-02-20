@@ -32,7 +32,7 @@ spec:
     spec:
       containers:
         - name: jasmin-dlr-container
-          image: jasmin-dlr-image:latest  # Ensure this image is pushed to a registry
+          image: amarques939/jasmin-dlr-image:1.0
           ports:
             - containerPort: 5000  # Flask application port
           env:
